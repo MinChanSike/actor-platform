@@ -26,16 +26,25 @@ final class ActivationContext(implicit system: ActorSystem) {
   /**
    * We don't care about result of sending internal code.
    * But we do care about sending code via external provider.
+   * We also don't show "Try to send code later" warning to end users.
    */
   def send(txHash: String, code: Code): Future[CodeFailure Xor Unit] =
-    for {
+    (for {
       _ ← trySend(optInternalProvider, txHash, code, logFailure = false)
       result ← code match {
         case s: SmsCode   ⇒ trySend(optSmsProvider, txHash, s)
         case e: EmailCode ⇒ trySend(optSmtpProvider, txHash, e)
         case c: CallCode  ⇒ trySend(optCallProvider, txHash, c)
       }
-    } yield result
+    } yield result) map {
+      case Xor.Left(BadRequest(message)) ⇒
+        system.log.warning("Bad request. Message: {}. Tx hash: {}, code: {}", message, txHash, code)
+        Xor.Right(())
+      case error @ Xor.Left(SendFailure(message)) ⇒
+        system.log.error("Send failure. Message: {}. Tx hash: {}, code: {}", message, txHash, code)
+        error
+      case result: Xor.Right[_] ⇒ result
+    }
 
   /**
    * If internal code validates - we are fine.

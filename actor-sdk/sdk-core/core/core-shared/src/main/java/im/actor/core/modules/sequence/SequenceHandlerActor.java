@@ -16,9 +16,8 @@ import im.actor.core.api.rpc.RequestGetReferencedEntitites;
 import im.actor.core.api.rpc.ResponseGetDifference;
 import im.actor.core.api.rpc.ResponseGetReferencedEntitites;
 import im.actor.core.modules.ModuleContext;
-import im.actor.core.modules.updates.UpdateProcessor;
-import im.actor.core.modules.updates.internal.InternalUpdate;
-import im.actor.core.modules.updates.internal.RelatedResponse;
+import im.actor.core.modules.sequence.internal.InternalUpdate;
+import im.actor.core.modules.sequence.internal.RelatedResponse;
 import im.actor.core.util.ModuleActor;
 import im.actor.core.network.parser.Update;
 import im.actor.runtime.Log;
@@ -29,6 +28,10 @@ import im.actor.runtime.promise.Promise;
 import im.actor.runtime.promise.PromiseFunc;
 import im.actor.runtime.promise.PromiseResolver;
 import im.actor.runtime.promise.Promises;
+
+/*-[
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+]-*/
 
 public class SequenceHandlerActor extends ModuleActor {
 

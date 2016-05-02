@@ -10,6 +10,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.database.Cursor;
+import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.media.MediaScannerConnection;
 import android.net.Uri;
@@ -22,6 +23,8 @@ import android.support.v4.app.Fragment;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.ActionBar;
 import android.support.v7.view.ActionMode;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
 import android.text.Editable;
 import android.text.Spannable;
 import android.text.TextWatcher;
@@ -32,9 +35,12 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.view.animation.TranslateAnimation;
 import android.widget.AdapterView;
+import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -42,6 +48,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Set;
 
 import im.actor.core.api.rpc.ResponseSeqDate;
 import im.actor.core.entity.MentionFilterResult;
@@ -62,15 +69,16 @@ import im.actor.sdk.ActorSDK;
 import im.actor.sdk.ActorStyle;
 import im.actor.sdk.R;
 import im.actor.sdk.controllers.Intents;
-import im.actor.sdk.controllers.calls.CallActivity;
 import im.actor.sdk.controllers.conversation.mentions.MentionsAdapter;
 import im.actor.sdk.controllers.conversation.messages.AudioHolder;
 import im.actor.sdk.controllers.conversation.messages.MessagesFragment;
+import im.actor.sdk.controllers.conversation.view.FastShareAdapter;
 import im.actor.sdk.controllers.fragment.settings.BaseActorChatActivity;
 import im.actor.sdk.core.audio.VoiceCaptureActor;
 import im.actor.sdk.intents.ActorIntent;
 import im.actor.sdk.util.Randoms;
 import im.actor.sdk.util.Screen;
+import im.actor.core.utils.GalleryScannerActor;
 import im.actor.sdk.view.avatar.AvatarView;
 import im.actor.sdk.controllers.conversation.view.TypingDrawable;
 import im.actor.sdk.view.emoji.SmileProcessor;
@@ -78,7 +86,6 @@ import im.actor.sdk.view.markdown.AndroidMarkdown;
 import im.actor.runtime.mvvm.Value;
 import im.actor.runtime.mvvm.ValueChangedListener;
 
-import static im.actor.sdk.util.ViewUtils.expand;
 import static im.actor.sdk.util.ViewUtils.expandMentions;
 import static im.actor.sdk.util.ViewUtils.goneView;
 import static im.actor.sdk.util.ViewUtils.hideView;
@@ -152,6 +159,7 @@ public class ChatActivity extends ActorEditTextActivity {
     private int slideStart;
     private TextView audioTimer;
     private boolean isAudioVisible;
+    private boolean isShareVisible;
     private int SLIDE_LIMIT;
     ActorRef voiceRecordActor;
     private String audioFile;
@@ -204,6 +212,7 @@ public class ChatActivity extends ActorEditTextActivity {
     private Intent intent;
     private boolean textEditing = false;
     private long currentEditRid;
+    private Animation.AnimationListener animationListener;
 
     public static Intent build(Peer peer, boolean compose, Context context) {
         final Intent intent = new Intent(context, ChatActivity.class);
@@ -283,7 +292,7 @@ public class ChatActivity extends ActorEditTextActivity {
                 goneView(quoteContainer);
                 quoteText.setText("");
                 currentQuote = "";
-                if(textEditing){
+                if (textEditing) {
                     messageEditText.setText("");
                 }
                 textEditing = false;
@@ -301,26 +310,29 @@ public class ChatActivity extends ActorEditTextActivity {
             }
         });
         shareContainer = findViewById(R.id.closeMenuLayout);
-        shareContainer.setOnClickListener(new View.OnClickListener() {
+        shareContainer.setOnTouchListener(new View.OnTouchListener() {
             @Override
-            public void onClick(View v) {
-                hideShareMenu();
+            public boolean onTouch(View v, MotionEvent event) {
+                hideShare();
+                return false;
             }
         });
 
+        final TextView locationText = (TextView) findViewById(R.id.location_text);
+        final View shareLocation = findViewById(R.id.share_location);
         try {
             ApplicationInfo app = ChatActivity.this.getPackageManager().getApplicationInfo(ChatActivity.this.getPackageName(), PackageManager.GET_META_DATA);
             Bundle bundle = app.metaData;
 
             if (bundle.containsKey("com.google.android.geo.API_KEY")) {
-                findViewById(R.id.share_location).setVisibility(View.VISIBLE);
+                shareLocation.setVisibility(View.VISIBLE);
                 findViewById(R.id.share_hide).setVisibility(View.GONE);
-                findViewById(R.id.location_hide_text).setVisibility(View.VISIBLE);
+                locationText.setVisibility(View.VISIBLE);
 
             } else {
-                findViewById(R.id.share_location).setVisibility(View.GONE);
+                shareLocation.setVisibility(View.GONE);
                 findViewById(R.id.share_hide).setVisibility(View.VISIBLE);
-                findViewById(R.id.location_hide_text).setVisibility(View.INVISIBLE);
+                locationText.setVisibility(View.INVISIBLE);
                 Log.w("Actor-GoogleMaps", "please, set up google map api key in AndroidManifest metadata to enable share locations");
             }
         } catch (PackageManager.NameNotFoundException e) {
@@ -382,20 +394,52 @@ public class ChatActivity extends ActorEditTextActivity {
                 }
 
                 //hide it
-                hideShareMenu();
+                hideShare();
             }
         };
 
         findViewById(R.id.share_gallery).setOnClickListener(shareMenuOCL);
         findViewById(R.id.share_video).setOnClickListener(shareMenuOCL);
         findViewById(R.id.share_camera).setOnClickListener(shareMenuOCL);
-        findViewById(R.id.share_location).setOnClickListener(shareMenuOCL);
+        shareLocation.setOnClickListener(shareMenuOCL);
         findViewById(R.id.share_file).setOnClickListener(shareMenuOCL);
         findViewById(R.id.share_hide).setOnClickListener(shareMenuOCL);
         findViewById(R.id.share_contact).setOnClickListener(shareMenuOCL);
         handleIntent();
 
+        RecyclerView fastShare = (RecyclerView) findViewById(R.id.fast_share);
+        final FastShareAdapter fastShareAdapter = new FastShareAdapter(this);
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
+        fastShare.setAdapter(fastShareAdapter);
+        fastShare.setLayoutManager(layoutManager);
 
+        final ImageButton shareMenuSend = (ImageButton) findViewById(R.id.share_send);
+        shareMenuSend.setColorFilter(Color.WHITE, PorterDuff.Mode.SRC_IN);
+        shareMenuSend.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Set<String> strings = fastShareAdapter.getSelectedVM().get();
+                for (String s : strings.toArray(new String[strings.size()])) {
+                    execute(messenger().sendUri(peer, Uri.fromFile(new File(s))));
+                }
+                fastShareAdapter.clearSelected();
+                hideShare();
+            }
+        });
+        fastShareAdapter.getSelectedVM().subscribe(new ValueChangedListener<Set<String>>() {
+            @Override
+            public void onChanged(Set<String> val, Value<Set<String>> valueModel) {
+                if (val.size() > 0) {
+                    shareLocation.setVisibility(View.INVISIBLE);
+                    shareMenuSend.setVisibility(View.VISIBLE);
+                    locationText.setText(getString(R.string.chat_doc_send) + "(" + val.size() + ")");
+                } else {
+                    shareLocation.setVisibility(View.VISIBLE);
+                    shareMenuSend.setVisibility(View.INVISIBLE);
+                    locationText.setText(getString(R.string.share_menu_location));
+                }
+            }
+        });
     }
 
     private void startCamera() {
@@ -434,13 +478,7 @@ public class ChatActivity extends ActorEditTextActivity {
         handleIntent();
     }
 
-    private void hideShareMenu() {
-        if (shareMenu.getVisibility() == View.VISIBLE) {
-            //hideView(shareMenu);
-            expand(shareMenu, 0);
-            shareContainer.setVisibility(View.GONE);
-        }
-    }
+
 
     @Override
     protected Fragment onCreateFragment() {
@@ -831,13 +869,13 @@ public class ChatActivity extends ActorEditTextActivity {
 //        });
 //        popup.show();
         if (shareMenuMaxHeight == 0) {
-            shareMenuMaxHeight = Screen.dp(180);
+            shareMenuMaxHeight = Screen.dp(245);
         }
         if (shareMenu.getVisibility() == View.VISIBLE) {
-            hideShareMenu();
+            hideShare();
         } else {
             shareContainer.setVisibility(View.VISIBLE);
-            expand(shareMenu, shareMenuMaxHeight);
+            showShare();
             if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
                 keyboardUtils.setImeVisibility(messageEditText, false);
             }
@@ -982,7 +1020,7 @@ public class ChatActivity extends ActorEditTextActivity {
                 }
             }
         });
-        hideShareMenu();
+        hideShare();
         expandMentions(mentionsList, 0, mentionsList.getCount());
     }
 
@@ -1028,7 +1066,7 @@ public class ChatActivity extends ActorEditTextActivity {
             quoteText.setText(rawQuote);
         }
         currentQuote = rawQuote;
-        hideShareMenu();
+        hideShare();
         quoteText.setCompoundDrawablesWithIntrinsicBounds(getResources().getDrawable(R.drawable.ic_editor_format_quote_gray), null, null, null);
         showView(quoteContainer);
     }
@@ -1195,7 +1233,7 @@ public class ChatActivity extends ActorEditTextActivity {
         quoteText.setCompoundDrawablesWithIntrinsicBounds(getResources().getDrawable(R.drawable.ic_content_create), null, null, null);
         quoteText.setText(R.string.edit_message);
         messageEditText.setText(text);
-        hideShareMenu();
+        hideShare();
         showView(quoteContainer);
 
     }
@@ -1340,6 +1378,60 @@ public class ChatActivity extends ActorEditTextActivity {
         audioContainer.animate();
         audioContainer.setVisibility(View.GONE);
         messageEditText.requestFocus();
+
+    }
+
+    private boolean animationInProgress = false;
+
+    private void showShare() {
+        if (animationInProgress) {
+            return;
+        }
+        if (animationListener == null) {
+            animationListener = new Animation.AnimationListener() {
+                @Override
+                public void onAnimationStart(Animation animation) {
+                    animationInProgress = true;
+                }
+
+                @Override
+                public void onAnimationEnd(Animation animation) {
+                    animationInProgress = false;
+                }
+
+                @Override
+                public void onAnimationRepeat(Animation animation) {
+
+                }
+            };
+        }
+
+        TranslateAnimation animation = new TranslateAnimation(0, 0, Screen.getHeight(), 0);
+        animation.setDuration(160);
+        animation.setAnimationListener(animationListener);
+        shareMenu.clearAnimation();
+        shareMenu.setAnimation(animation);
+        shareMenu.animate();
+        shareMenu.setVisibility(View.VISIBLE);
+        isShareVisible = true;
+        messenger().getGalleryScannerActor().send(new GalleryScannerActor.Visible(true));
+    }
+
+    private void hideShare() {
+        if (!isShareVisible || animationInProgress) {
+            return;
+        }
+        isShareVisible = false;
+        TranslateAnimation animation = new TranslateAnimation(0, 0, 0, Screen.getHeight());
+        animation.setDuration(160);
+
+        animation.setAnimationListener(animationListener);
+        shareMenu.clearAnimation();
+        shareMenu.setAnimation(animation);
+        shareMenu.animate();
+        shareMenu.setVisibility(View.GONE);
+        shareContainer.setVisibility(View.GONE);
+        messenger().getGalleryScannerActor().send(new GalleryScannerActor.Visible(false));
 
     }
 

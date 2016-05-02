@@ -7,6 +7,8 @@ import ReactMixin from 'react-mixin';
 import { FormattedHTMLMessage } from 'react-intl'
 import PureRenderMixin from 'react-addons-pure-render-mixin';
 
+import SvgIcon from '../../common/SvgIcon.react';
+
 import { PeerTypes } from '../../../constants/ActorAppConstants';
 
 import InviteUserActions from '../../../actions/InviteUserActions';
@@ -52,17 +54,16 @@ class Welcome extends Component {
     }
 
     return(
-      <li className="message message--welcome row">
+      <div className="message message--welcome row">
         <div className="message__info">
           <div className="welcome-avatar">
-            <svg className="icon icon--gray"
-                 dangerouslySetInnerHTML={{__html: '<use xlink:href="assets/images/icons.svg#star"/>'}}/>
+            <SvgIcon className="icon icon--gray" glyph="star" />
           </div>
         </div>
         <div className="message__body col-xs">
           {welcomeText}
         </div>
-      </li>
+      </div>
     )
   }
 }

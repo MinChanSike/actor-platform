@@ -35,6 +35,12 @@ public protocol AABubbleLayouter  {
     func cellClass() -> AnyClass
 }
 
+extension AABubbleLayouter {
+    func cellReuseId() -> String {
+        return "cell_\(cellClass())"
+    }
+}
+
 /**
     Root class for bubble cells
 */
@@ -170,7 +176,7 @@ public class AABubbleCell: UICollectionViewCell {
         contentView.addSubview(dateBg)
         contentView.addSubview(dateText)
         
-        avatarView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: "avatarDidTap"))
+        avatarView.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(AABubbleCell.avatarDidTap)))
         avatarView.userInteractionEnabled = true
         
         backgroundColor = UIColor.clearColor()
@@ -201,7 +207,7 @@ public class AABubbleCell: UICollectionViewCell {
     }
 
     public override func canPerformAction(action: Selector, withSender sender: AnyObject?) -> Bool {
-        if action == "delete:" {
+        if action == #selector(NSObject.delete(_:)) {
             return true
         }
         return false
@@ -258,7 +264,7 @@ public class AABubbleCell: UICollectionViewCell {
         
         self.isShowDate = setting.showDate
         if (isShowDate) {
-            self.dateText.text = Actor.getFormatter().formatDate(message.date)
+            self.dateText.text = layout.date
         }
         
         self.bindedSetting = setting
